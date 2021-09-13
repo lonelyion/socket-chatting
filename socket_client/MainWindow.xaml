@@ -1,0 +1,65 @@
+﻿<Window x:Class="socket_client.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:socket_client"
+        x:Name="_this"
+        mc:Ignorable="d"
+        Title="客户端" Height="450" Width="800" FontFamily="Noto Sans SC" Closing="_this_Closing" >
+    <Grid Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Column="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Label Grid.Row="0" Grid.Column="0" Content="服务器IP"/>
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="serverIPTextBox" Margin="8 0 0 0" VerticalContentAlignment="Center" Text="127.0.0.1"/>
+            <Label Grid.Row="1" Grid.Column="0" Content="服务器端口" />
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="serverPortTextBox" Margin="8 0 0 0" VerticalContentAlignment="Center" Text="9047"/>
+            <Label Grid.Row="2" Grid.Column="0" Content="用户名" />
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="userNameTextBox" Margin="8 0 0 0" VerticalContentAlignment="Center" Text="amiya"/>
+            <Label Grid.Row="3" Grid.Column="0" Content="口令" />
+            <TextBox Grid.Row="3" Grid.Column="1" x:Name="tokenTextBox" Margin="8 0 0 0" VerticalContentAlignment="Center" Text="amiya"/>
+            <Button Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="connectButton" Content="连接服务器" Margin="0 8 0 0" Click="connectButton_Click"/>
+            <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2">
+                <TextBlock Text="用户名第一次连接时自动注册，下次登录需要和口令对应" TextWrapping="WrapWithOverflow" />
+                <StackPanel Orientation="Horizontal" Margin="0 16 0 0">
+                    <TextBlock Text="当前状态："/>
+                    <TextBlock x:Name="connectionText" Text="未连接" Foreground="Red" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+                    <TextBlock Text="在线人数：" />
+                    <TextBlock Text="0" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Column="1" Grid.Row="0" Margin="8 0 0 0">
+            <TextBox x:Name="logTextBox" Text="" Background="LightGray" IsReadOnly="True" TextWrapping="WrapWithOverflow" IsUndoEnabled="False"/>
+        </Grid>
+        <Grid Grid.Column="1" Grid.Row="1" Margin="8 4 0 0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="inputTextBox" Text="Hello" />
+            <Button x:Name="sendButton" IsEnabled="False" Content=" 发送 " Grid.Column="1" MinWidth="64" Margin="4 0 0 0" Click="sendButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>
