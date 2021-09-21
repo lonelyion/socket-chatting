@@ -10,9 +10,18 @@ using System.IO;
 using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.Collections.ObjectModel;
+using System.Windows.Data;
 
 namespace socket_server
 {
+    public class User
+    {
+        public string UserName { get; set; }
+        public string Token { get; set; }
+
+        public User(string u, string t) => (UserName, Token) = (u, t);
+    }
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -20,10 +29,32 @@ namespace socket_server
     {
         ServerSocket instance;
         bool isRunning = false;
+
         public MainWindow()
         {
             InitializeComponent();
             Console.SetOut(new ControlWriter(logTextBox));
+
+            Thread thread = new Thread(() =>
+            {
+                //Dictionary<string, string> test = new Dictionary<string, string>();
+                //test.Add("1", "amiya");
+                //test.Add("2", "doctor");
+                while (true)
+                {
+                    if (instance != null && instance.clientNames != null)
+                    {
+                        var copy = new Dictionary<string, string>(instance.clientNames);
+                        onlineUserListView.Dispatcher.Invoke(new Action(() =>
+                        {
+                            onlineUserListView.ItemsSource = copy;
+                        }));
+                    }
+                    Thread.Sleep(2500);
+                }
+            })
+            { IsBackground = true };
+            thread.Start();
         }
 
         private void portTextBox_LostFocus(object sender, RoutedEventArgs e)
@@ -48,6 +79,14 @@ namespace socket_server
                 {
                     instance = new ServerSocket();
                     instance.StartServer(port);
+                    //onlineUserListView.ItemsSource = instance.users;
+                    //Binding binding = new Binding()
+                    //{
+                    //    Source = instance.clientNames,
+                    //    Mode = BindingMode.OneWay,
+                    //    UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+                    //};
+                    //onlineUserListView.SetBinding(ListView.ItemsSourceProperty, binding);
                     statusLabel.Content = "正在运行";
                     statusLabel.Foreground = System.Windows.Media.Brushes.Green;
                     controlButton.Content = "关闭服务端";
@@ -69,7 +108,7 @@ namespace socket_server
                     statusLabel.Foreground = System.Windows.Media.Brushes.Red;
                     controlButton.Content = "打开服务端";
                     isRunning = false;
-                    ControlWriter.LogWriteLine("服务器结束运行");
+                    logTextBox.Text += string.Format("[{0}]{1}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), "服务端结束运行\r\n");
                 }
                 catch (Exception ex)
                 {
@@ -89,9 +128,34 @@ namespace socket_server
         private Dictionary<string, Socket> clientSockets;
         private Task watchTask;
         private CancellationTokenSource cts;
+        private List<User> users;
+        public Dictionary<string, string> clientNames;
 
-        public ServerSocket() { }
+        public ServerSocket() { LoadJson(); }
+        public void LoadJson()
+        {
+            try
+            {
+                using (StreamReader reader = File.OpenText("users.json"))
+                {
+                    string json = reader.ReadToEnd();
+                    users = JsonConvert.DeserializeObject<List<User>>(json);
+                }
+            }
+            catch (Exception)
+            {
+                users = new List<User>();
+            }
+        }
 
+        public void SaveJson()
+        {
+            using (StreamWriter writer = File.CreateText("users.json"))
+            {
+                string json = JsonConvert.SerializeObject(users);
+                writer.WriteLine(json);
+            }
+        }
         public void StartServer(int port)
         {
             if (serverSocket == null)
@@ -100,6 +164,8 @@ namespace socket_server
                 {
                     isListening = true;
                     clientSockets = new Dictionary<string, Socket>();
+                    clientNames = new Dictionary<string, string>();
+
                     serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                     endPoint = new IPEndPoint(IPAddress.Any, port);     //0.0.0.0:port
 
@@ -139,19 +205,20 @@ namespace socket_server
                     }
                     //client = serverSocket.Accept();
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     //TODO: Error Handling
                 }
 
                 try
                 {
-                    try { if (client == null) return; var _ = client.RemoteEndPoint; }
-                    catch (Exception e) { return; }
+                    try { if (client == null || !client.Connected) return; var _ = client.RemoteEndPoint; }
+                    catch (Exception) { return; }
+
                     string remoteAddr = client.RemoteEndPoint.ToString();
                     if (!string.IsNullOrEmpty(remoteAddr))
                     {
-                        clientSockets.Add(remoteAddr, client);  //连接成功，添加到客户端列表中
+                        clientSockets.Add(remoteAddr, client);  //连接成功，
                         ControlWriter.LogWriteLine(remoteAddr + "客户端连接成功");
                     }
 
@@ -191,30 +258,57 @@ namespace socket_server
                     int len = client.Receive(buffer);
                     if (len == 0) continue;
                     string message = Encoding.UTF8.GetString(buffer, 0, len);
-                    ControlWriter.LogWriteLine(string.Format("客户端{0}: {1}", client.RemoteEndPoint.ToString(), message));
+                    string remoteEndPoint = client.RemoteEndPoint.ToString();
+                    ControlWriter.LogWriteLine(string.Format("<-收到{0}: {1}", remoteEndPoint, message));
 
 
                     JObject request = JObject.Parse(message);
-                    JObject response;
+                    JObject response = null;
                     if (request["type"].ToString() == "login")
                     {
                         //登录/注册请求
                         response = new JObject();
                         response["type"] = "login";
-                        response["status"] = new Random().Next(0, 2) == 0 ? "ok" : "registered";
+
+                        User u = users.Find(x => x.UserName == request["username"].ToString());
+                        if (u == null)
+                        {
+                            //用户名不存在
+                            u = new User(request["username"].ToString(), request["token"].ToString());
+                            users.Add(u);
+                            clientNames.Add(remoteEndPoint, request["username"].ToString());
+                            response["status"] = "registered";
+                        }
+                        else
+                        {
+                            //用户名存在
+                            if (u.Token == request["token"].ToString())
+                            {
+                                response["status"] = "ok";
+                                clientNames.Add(remoteEndPoint, request["username"].ToString());
+                            }
+                            else
+                            {
+                                response["status"] = "fail";
+                            }
+                        }
                         client.Send(Encoding.UTF8.GetBytes(response.ToString(Formatting.None)));
+
                     }
                     else if (request["type"].ToString() == "disconnect")
                     {
-                        ControlWriter.LogWriteLine(client.RemoteEndPoint.ToString() + "断开了服务器");
-                        clientSockets.Remove(client.RemoteEndPoint.ToString());
+                        //断开连接请求
+                        ControlWriter.LogWriteLine(clientNames[remoteEndPoint] + "断开了服务器");
+                        clientSockets.Remove(remoteEndPoint);
+                        clientNames.Remove(remoteEndPoint);
                         client.Shutdown(SocketShutdown.Both);
                         client.Dispose();
-                    } else if(request["type"].ToString() == "text")
+                    }
+                    else if (request["type"].ToString() == "text")
                     {
                         //客户端发送了一条文本消息
                         string content = request["content"].ToString();
-                        ControlWriter.LogWriteLine(client.RemoteEndPoint.ToString() + "发送了: " + content);
+                        //ControlWriter.LogWriteLine(clientNames[remoteEndPoint] + "发送了: " + content);
                         response = new JObject();
                         response["type"] = "text";
                         response["status"] = "ok";
@@ -224,18 +318,19 @@ namespace socket_server
                         response["type"] = "message";
                         response["status"] = "ok";
                         response["content"] = content;
-                        response["sender"] = client.RemoteEndPoint.ToString();
+                        response["sender"] = clientNames[remoteEndPoint];
                         Broadcast(response.ToString(Formatting.None)); //再广播消息
                     }
-
-                    //if (clientSockets.Count > 0)
-                    //{
-                    //    foreach (var socket in clientSockets)
-                    //    {
-                    //        socket.Value.Send(Encoding.UTF8.GetBytes(string.Format("[{0}]{1}: {2}", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), client.RemoteEndPoint.ToString(), received)));
-                    //    }
-                    //}
-
+                    else if (request["type"].ToString() == "query")
+                    {
+                        response = new JObject();
+                        response["type"] = "query";
+                        response["online_count"] = clientNames.Count;
+                        response["status"] = "ok";
+                        client.Send(Encoding.UTF8.GetBytes(response.ToString(Formatting.None)));
+                    }
+                    if(response != null)
+                        ControlWriter.LogWriteLine(string.Format("->发送{0}: {1}", remoteEndPoint, response.ToString(Formatting.None)));
                 }
                 catch (Exception)
                 {
@@ -269,14 +364,17 @@ namespace socket_server
                     socket.Value.Shutdown(SocketShutdown.Both);
                 }
                 clientSockets.Clear();
+                clientNames.Clear();
                 serverSocket.Close();
                 serverSocket.Dispose();
             }
             catch (Exception ex)
             {
-                //Todo
-                ControlWriter.LogWriteLine(ex.Message);
-                ControlWriter.LogWriteLine(ex.StackTrace);
+
+            }
+            finally
+            {
+                SaveJson();
             }
         }
     }
@@ -290,12 +388,38 @@ namespace socket_server
 
         public override void Write(char value)
         {
-            textbox.Dispatcher.Invoke(new Action(() => textbox.Text += value));
+            if (textbox.Dispatcher.Thread != Thread.CurrentThread)
+            {
+                textbox.Dispatcher.Invoke(new Action(() =>
+                {
+                    textbox.Text += value;
+                    textbox.ScrollToEnd();
+                }
+            ));
+            }
+            else
+            {
+                textbox.Text += value;
+                textbox.ScrollToEnd();
+            }
         }
 
         public override void Write(string value)
         {
-            textbox.Dispatcher.Invoke(new Action(() => textbox.Text += value));
+            if (textbox.Dispatcher.Thread != Thread.CurrentThread)
+            {
+                textbox.Dispatcher.Invoke(new Action(() =>
+                {
+                    textbox.Text += value;
+                    textbox.ScrollToEnd();
+                }
+            ));
+            }
+            else
+            {
+                textbox.Text += value;
+                textbox.ScrollToEnd();
+            }
         }
 
         public override Encoding Encoding

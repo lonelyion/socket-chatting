@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +30,26 @@ namespace socket_client
             InitializeComponent();
             Console.SetOut(new ControlWriter(logTextBox));
             sendButton.IsEnabled = false;
+
+            Thread countThread = new Thread(() =>
+            {
+                while (true)
+                {
+                    if (client != null && client.Connected)
+                    {
+                        JObject o = new JObject();
+                        o["type"] = "query";
+                        client.Send(Encoding.UTF8.GetBytes(o.ToString(Formatting.None)));
+                    } else
+                    {
+                        onlineCountText.Dispatcher.Invoke(() => onlineCountText.Text = "0");
+                    }
+                    Thread.Sleep(5000);
+                }
+            })
+            { IsBackground = true };
+
+            countThread.Start();
         }
         public static void LogWriteLine(string msg)
         {
@@ -37,17 +58,21 @@ namespace socket_client
 
         public void NotifyClose()
         {
-            JObject notify = new JObject();
-            notify["type"] = "disconnect";
-            client.Send(Encoding.UTF8.GetBytes(notify.ToString(Formatting.None)));
-            //已经连接
-            cts.Cancel();
-            //recvTask.Wait();
-            client.Shutdown(SocketShutdown.Both);
+            if (client.Connected)
+            {
+                JObject notify = new JObject();
+                notify["type"] = "disconnect";
+                client.Send(Encoding.UTF8.GetBytes(notify.ToString(Formatting.None)));
+                //已经连接
+                cts.Cancel();
+                //recvTask.Wait();
+                client.Shutdown(SocketShutdown.Both);
+            }
             connectButton.Content = "连接服务器";
             connectionText.Text = "未连接";
             connectionText.Foreground = Brushes.Red;
             sendButton.IsEnabled = false;
+            LogWriteLine("已断开与服务器的连接");
         }
 
         private async void connectButton_Click(object sender, RoutedEventArgs e)
@@ -120,28 +145,17 @@ namespace socket_client
                         JObject o = new JObject();
                         o["type"] = "login";
                         o["username"] = userNameTextBox.Dispatcher.Invoke(() => userNameTextBox.Text);
-                        o["password"] = tokenTextBox.Dispatcher.Invoke(() => tokenTextBox.Text);
+                        o["token"] = GetMD5(tokenTextBox.Dispatcher.Invoke(() => tokenTextBox.Text));
                         byte[] login_buffer = Encoding.UTF8.GetBytes(o.ToString(Formatting.None));
                         client.Send(login_buffer);
                     }
                     else if (res["type"].ToString() == "login")
                     {
                         //登录信息的返回
-                        if (res["status"].ToString() == "ok")
+                        if (res["status"].ToString() == "ok" || res["status"].ToString() == "registered")
                         {
                             //登录成功
-                            LogWriteLine("登录成功，欢迎加入群聊");
-                            connectionText.Dispatcher.Invoke(() => connectionText.Text = "已连接");
-                            connectionText.Dispatcher.Invoke(() => connectionText.Foreground = Brushes.Green);
-                            sendButton.Dispatcher.Invoke(() => sendButton.IsEnabled = true);
-                            //connectionText.Text = "已连接";
-                            //connectionText.Foreground = System.Windows.Media.Brushes.Green;
-                            //sendButton.IsEnabled = true;
-                        }
-                        else if (res["status"].ToString() == "registered")
-                        {
-                            //注册成功
-                            LogWriteLine("注册成功，欢迎加入群聊");
+                            LogWriteLine((res["status"].ToString() == "ok" ? "登录" : "注册") + "成功，欢迎加入群聊");
                             connectionText.Dispatcher.Invoke(() => connectionText.Text = "已连接");
                             connectionText.Dispatcher.Invoke(() => connectionText.Foreground = Brushes.Green);
                             sendButton.Dispatcher.Invoke(() => sendButton.IsEnabled = true);
@@ -183,6 +197,10 @@ namespace socket_client
                         connectButton.Dispatcher.Invoke(() => connectButton.Content = "连接服务器");
                         LogWriteLine("服务器关闭了.");
                     }
+                    else if (res["type"].ToString() == "query")
+                    {
+                        onlineCountText.Dispatcher.Invoke(() => onlineCountText.Text = res["online_count"].ToString());
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -205,6 +223,18 @@ namespace socket_client
             }
         }
 
+        public static string GetMD5(string str)
+        {
+            using (var md5 = MD5.Create())
+            {
+                //salt
+                var result = md5.ComputeHash(Encoding.UTF8.GetBytes(str + "a525fbf4-e56e-43ff-bb86-9e52102af550"));
+                string md5Str = BitConverter.ToString(result);
+                md5Str = md5Str.Replace("-", "").ToLower();
+                return md5Str;
+            }
+        }
+
         private void _this_Closing(object sender, CancelEventArgs e)
         {
             NotifyClose();
@@ -221,12 +251,22 @@ namespace socket_client
 
         public override void Write(char value)
         {
-            textbox.Dispatcher.Invoke(new Action(() => textbox.Text += value));
+            textbox.Dispatcher.Invoke(new Action(() =>
+            {
+                textbox.Text += value;
+                textbox.ScrollToEnd();
+            }
+            ));
         }
 
         public override void Write(string value)
         {
-            textbox.Dispatcher.Invoke(new Action(() => textbox.Text += value));
+            textbox.Dispatcher.Invoke(new Action(() =>
+            {
+                textbox.Text += value;
+                textbox.ScrollToEnd();
+            }
+            ));
         }
 
         public override Encoding Encoding
